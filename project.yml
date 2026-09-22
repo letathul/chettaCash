@@ -1,0 +1,112 @@
+name: ChettaCash
+
+options:
+  bundleIdPrefix: com.chettacash
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    SWIFT_UPCOMING_FEATURE_EXISTENTIAL_ANY: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+
+packages:
+  Domain:
+    path: LocalPackages/Domain
+  Data:
+    path: LocalPackages/Data
+  Features:
+    path: LocalPackages/Features
+
+targets:
+  ChettaCashApp:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+    info:
+      path: App/Resources/Info.plist
+      properties:
+        # Without UILaunchScreen the app runs letterboxed in a compatibility-sized
+        # window instead of filling the display.
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        # Required by the §9.7 still-photo capture. Without it the camera route
+        # terminates the app rather than prompting.
+        NSCameraUsageDescription: >-
+          Chetta Cash uses the camera to photograph a receipt, so it can fill in the
+          shop, the amount and the date for you. The photo stays on your device.
+        # Required by the §11 app lock. Without it iOS will not offer Face ID at all —
+        # the prompt drops straight to the passcode keypad — and evaluating a biometric
+        # policy terminates the app on device.
+        NSFaceIDUsageDescription: >-
+          Chetta Cash uses Face ID to unlock the app, so your balances stay private if
+          someone else picks up your phone.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.chettacash.app
+        PRODUCT_NAME: Chetta Cash
+        TARGETED_DEVICE_FAMILY: "1"
+        # Signed for device. Simulator builds ignore this; a device build needs a
+        # team, which is also what CloudKit (D6) and iCloud Drive (D9) are waiting on.
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: URAT4QWWD5
+    dependencies:
+      - package: Domain
+        product: Domain
+      - package: Data
+        product: Data
+      - package: Features
+        product: Features
+    preBuildScripts:
+      - name: SwiftLint
+        basedOnDependencyAnalysis: false
+        script: |
+          if command -v swiftlint >/dev/null 2>&1; then
+            # Run from SRCROOT with auto-discovery. Passing --config explicitly makes
+            # SwiftLint ignore the nested configs under LocalPackages/*/Tests.
+            cd "$SRCROOT" && swiftlint lint --quiet
+          else
+            echo "warning: SwiftLint is not installed. Run: brew install swiftlint"
+          fi
+
+  AppTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: AppTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        # Hosted by the app: Vision and FoundationModels both need a real bundle,
+        # which a hostless SPM test bundle does not have (finding E2).
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Chetta Cash.app/Chetta Cash"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        PRODUCT_BUNDLE_IDENTIFIER: com.chettacash.app.tests
+    dependencies:
+      - target: ChettaCashApp
+      - package: Domain
+        product: Domain
+      - package: Features
+        product: Features
+
+schemes:
+  ChettaCashApp:
+    build:
+      targets:
+        ChettaCashApp: all
+    run:
+      config: Debug
+  AppTests:
+    build:
+      targets:
+        AppTests: [test]
+    test:
+      config: Debug
+      targets:
+        - AppTests

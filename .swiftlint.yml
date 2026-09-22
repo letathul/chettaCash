@@ -1,0 +1,72 @@
+# Chetta Cash — SwiftLint configuration
+# Enforces the code standards in CLAUDE.md across all four modules.
+
+included:
+  - App
+  - LocalPackages
+
+excluded:
+  - .build
+  - DerivedData
+  - LocalPackages/Domain/.build
+  - LocalPackages/Data/.build
+  - LocalPackages/Features/.build
+  # Package manifests are declarative build config, not app code.
+  - LocalPackages/Domain/Package.swift
+  - LocalPackages/Data/Package.swift
+  - LocalPackages/Features/Package.swift
+
+opt_in_rules:
+  - force_unwrapping
+  - missing_docs
+  - empty_count
+
+# CLAUDE.md requires DocC comments on all public AND internal declarations.
+# The built-in AST-based rule replaces the former `internal_function_missing_docs`
+# custom regex rule, which used a variable-length lookbehind that
+# NSRegularExpression cannot compile (SwiftLint rejected it as invalid config).
+missing_docs:
+  warning: [open, public, internal]
+  excludes_extensions: false
+  excludes_inherited_types: true
+  excludes_trivial_init: true
+  evaluate_effective_access_control_level: true
+
+# Structural & Complexity Metrics
+file_length:
+  warning: 300
+  error: 500
+
+function_body_length:
+  warning: 40
+  error: 70
+
+cyclomatic_complexity:
+  warning: 8
+  error: 12
+
+function_parameter_count:
+  warning: 4
+  error: 6
+
+custom_rules:
+  domain_no_ui_imports:
+    name: "Domain Layer UI Dependency"
+    regex: "(import UIKit|import SwiftUI)"
+    included: ".*/LocalPackages/Domain/.*"
+    message: "Domain module must remain pure Swift without UI imports."
+    severity: error
+
+  domain_no_persistence_imports:
+    name: "Domain Layer Persistence Dependency"
+    regex: "(import SwiftData|import CoreData|import CloudKit)"
+    included: ".*/LocalPackages/Domain/.*"
+    message: "Domain module must remain free of persistence frameworks."
+    severity: error
+
+  features_no_data_import:
+    name: "Features Layer Data Dependency"
+    regex: "^import Data$"
+    included: ".*/LocalPackages/Features/.*"
+    message: "Features must depend only on Domain. Inject Data implementations from App."
+    severity: error
