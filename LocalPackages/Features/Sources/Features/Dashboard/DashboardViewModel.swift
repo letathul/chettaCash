@@ -86,6 +86,18 @@ public final class DashboardViewModel {
         settingsStore?.save(settings)
     }
 
+    /// Scopes the Dashboard to one account, or back to every open account.
+    ///
+    /// Persists immediately and recomputes every derived figure, matching how every
+    /// other Dashboard preference here is written.
+    ///
+    /// - Parameter accountID: The account to focus on, or `nil` for "All accounts".
+    public func setFocusedAccount(_ accountID: UUID?) {
+        settings.focusedAccountID = accountID
+        settingsStore?.save(settings)
+        refresh()
+    }
+
     // MARK: - Derived figures (§4.1)
     //
     // Stored rather than computed, and rebuilt by `refresh()` at the end of `load()`.
@@ -93,18 +105,38 @@ public final class DashboardViewModel {
     // computed properties these were O(accounts × transactions) *per body evaluation* —
     // and the trends multiplied that by six months.
 
-    /// Open accounts, which is what the account strip shows.
+    /// Every open account, regardless of the focused-account setting.
+    ///
+    /// This is what the account picker offers — the strip itself may show fewer, via
+    /// ``displayedAccounts``.
     public internal(set) var openAccounts: [Domain.Account] = []
-    /// Sum of every open spending account, excluding cards.
+    /// The account the Dashboard is scoped to, or `nil` for "All accounts".
+    public internal(set) var focusedAccount: Domain.Account?
+    /// What the account strip actually renders: just the focused account, or every
+    /// open account when nothing is focused.
+    public internal(set) var displayedAccounts: [Domain.Account] = []
+    /// Sum of every open spending account, excluding cards, scoped to the focused
+    /// account when one is set.
     public internal(set) var availableCashCents = 0
-    /// Sum of every open account, cards included.
+    /// Sum of every open account, cards included, scoped to the focused account when
+    /// one is set.
     public internal(set) var netWorthCents = 0
-    /// Six months of spend.
-    public internal(set) var spendTrend = TrendSeries(points: [])
-    /// Six months of net worth.
-    public internal(set) var netWorthTrend = TrendSeries(points: [])
-    /// The most recent posted transactions.
+    /// The hero carousel's pages: "All accounts" first, then one per open account.
+    ///
+    /// Internal, like ``RecentRowModel`` and ``recentRows`` below: `HeroPageModel` is
+    /// not public, so this cannot be either.
+    var heroPages: [HeroPageModel] = []
+    /// The most recent posted transactions, scoped to the focused account when one is
+    /// set. Empty whenever ``recentSectionTitle`` is "Today" — ``recentRows`` carries
+    /// today's transactions instead.
     public internal(set) var recentTransactions: [Domain.Transaction] = []
+    /// "Today" when at least one transaction posted today, otherwise "Recent".
+    public internal(set) var recentSectionTitle = "Recent"
+    /// Whether the list is standing in for a quiet day.
+    ///
+    /// Drives the mock's explanatory first row. Stored rather than derived from
+    /// ``recentSectionTitle``, so nothing has to compare display strings.
+    public internal(set) var isShowingRecentFallback = false
     /// Every active rule, for the subscriptions list (§7.2).
     ///
     /// This is the only subscription registry: it covers standalone recurring

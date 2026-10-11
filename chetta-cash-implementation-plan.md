@@ -451,6 +451,8 @@ enum BackupInterval: String, Codable { case off, weekly, monthly }
 
 Five tabs: Dashboard, Vault, Ledger, More, Settings. Icons: house, shield-checkmark, booklet, ellipsis, gear. Active tint `#7A2FC4`, inactive `#8A8792`. Each tab root is its own `NavigationStack`.
 
+**As shipped**, Vault has no tab of its own (§7.3's note): products are created from the transaction form and the Dashboard's floating "Add product" button, and browsed from search. The current tab order is **Dashboard, Ledger, Add, More, Settings** — icons `house`, `list.bullet`, `doc.text.badge.plus`, `ellipsis`, `gearshape`. **Add** is not a real destination: selecting it opens Add Transaction (the same form the Ledger's "+" opens) and immediately reverts the visible tab, since `TabView` has no native concept of an action item. It sits third, dead centre of five, because it is the one item reached constantly and the centre is the shortest reach.
+
 ### 6.2 The More tab
 
 Implement as a list screen with one row today — "Compare Prices" → pushes `CompareView`. **Do not hard-route the tab straight to Compare.** The tab exists to leave room for future utilities; routing it directly would require a redesign to add a second one.
@@ -482,19 +484,25 @@ Dashboard, Vault, Ledger, Compare and Settings' Accounts section must each suppo
 
 ### 7.1 Dashboard
 
-**The organising principle: the Dashboard answers "where do I stand." The Today card answers "what needs me."** Everything time-sensitive lives in the Today card, so nothing else on the screen needs a badge or an alert.
+**The organising principle: the Dashboard answers "where do I stand." The hero carousel answers "what needs me."** Everything time-sensitive lives on the carousel's lead page and behind its chevron, so nothing else on the screen needs a badge or an alert.
 
 Sections, top to bottom:
 
-1. **Today card** — see 7.2.
-2. **Accounts** — horizontally scrolling mini-cards, one per open account: icon, name, balance. Reference data, so it sits below Today.
-3. **Quick actions** — "Log transaction" (accent fill) opens Add Transaction; "Add product" opens Add Product.
-4. **Trends** — two side-by-side 6-month bar charts, Spend and Net worth, each with a current value and a delta badge versus the prior month.
-5. **Recent transactions** — most recent posted transactions, with "See all" into the Ledger.
+1. **Greeting** — the screen's large title reads "Good morning / afternoon / evening" rather than "Dashboard". A name the app already knows beats a label nobody needs.
+2. **Hero carousel** — a horizontally paged card with a page indicator. The lead page is **All accounts**: Available Cash, a thirty-day net-worth sparkline, the category insight, and the Today digest's status chips. Each following page is one open account: its name, its masked digits when it has them (`Account.last4`), its derived balance, its own sparkline and its own insight. The chevron on every page opens the Today sheet (§7.2).
+3. **Today, falling back to Recent** — today's posted transactions when there are any, titled "Today"; otherwise the most recent posted ones, titled "Recent" and led by an explicit *"No activity today — showing recent"* line so the substitution is never silent. Rows carry a category-tinted circular avatar and read their date relatively ("Today", "Yesterday", "Sat", "12 Sep"). "See all transactions" sits inside the card, into the Ledger.
 
-**Trends data must be computed from real history, never hardcoded.** Monthly spend is the sum of that month's posted expense transactions, excluding transfers and adjustments. Monthly net worth is the sum of all account balances as of each month's end. Write a lightweight `NetWorthSnapshot` record once per month for accurate history; approximating from current balance plus transaction deltas is acceptable for v1 if snapshots are added before the chart is relied on.
+**Swiping the carousel is the focused-account picker.** The visible page writes through to `AppSettings.focusedAccountID`, so the choice persists and the Today list below rescopes to match. An id that no longer resolves to an open account behaves exactly like "All accounts." There is no separate picker row and no account strip — the carousel is both.
 
-**Colour rule, mandatory:** Spend is **red on an increase, green on a decrease** — spending more is the unwelcome direction. Net worth is the reverse, **green on an increase**. Colour must never be the only signal; pair it with an arrow or sign (§12).
+**The sparkline is real daily history, never sampled or faked.** `BalanceSeriesEngine` derives one point per day for the trailing thirty days, in a single sort and two linear passes rather than by re-deriving a balance per day. Note the one inversion: **transfer legs and adjustments do move a balance series**, even though `TotalsEngine` excludes them from every *total*. `BalanceSeries` also carries the min/max band and pre-normalised values, because a balance is a *stock* — a card between −$800 and −$900 scaled against a zero-anchored peak would draw as a flat line at the bottom.
+
+**The category insight is computed, and deliberately quiet.** `CategoryInsightEngine` compares each category's spend this month against last and reports at most one — the largest move **in cents**, not in percentage, because dollars are what a person feels and percentage-first ranking always surfaces whichever small category happened to double. Three floors keep it honest ($25 spent, a $10 move, 10%), and a **fall is suppressed for the first week of the month**, since on the 3rd every category is "down 90%" against a full prior month. A rise is never suppressed — it cannot be an artefact. Uncategorised spending is excluded: that is a data-hygiene nag, and the Today card already owns it.
+
+**The 6-month Trends charts are not on this screen.** They were removed with the redesign and have no tab of their own. `TrendsEngine.monthlySpend` / `monthlyIncome` / `monthlyNetWorth` and their tests remain, so restoring them is view-only work.
+
+Quick actions do not sit inline: "Add product" is a floating button in the screen's bottom-trailing corner, and "Log transaction" is the centre item in the app's tab bar (§6.1).
+
+**Colour rule, mandatory:** spending **more** is the unwelcome direction, so a rise in spend reads red and a fall reads green; net worth and income are the reverse. Colour must never be the only signal — the hero insight pairs it with a flame or a checkmark (§12).
 
 **Dashboard states:** Empty appears only when there are **zero accounts** — "No accounts yet" with an "Add your first account" CTA.
 

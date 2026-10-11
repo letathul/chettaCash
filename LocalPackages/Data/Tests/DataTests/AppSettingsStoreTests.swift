@@ -65,6 +65,37 @@ struct AppSettingsStoreTests {
         }
     }
 
+    @Test("The focused account survives a relaunch")
+    func focusedAccountRoundTrips() {
+        withStore { store in
+            let saved = AppSettings()
+            saved.focusedAccountID = UUID()
+            store.save(saved)
+
+            let loaded = AppSettings()
+            store.load(into: loaded)
+
+            #expect(loaded.focusedAccountID == saved.focusedAccountID)
+        }
+    }
+
+    @Test("Clearing the focused account is stored, not just forgotten")
+    func clearingFocusedAccountRoundTrips() {
+        withStore { store in
+            let saved = AppSettings()
+            saved.focusedAccountID = UUID()
+            store.save(saved)
+            saved.focusedAccountID = nil
+            store.save(saved)
+
+            let loaded = AppSettings()
+            loaded.focusedAccountID = UUID()
+            store.load(into: loaded)
+
+            #expect(loaded.focusedAccountID == nil)
+        }
+    }
+
     @Test("A flag a later build no longer knows about is dropped on load")
     func unknownFlagsAreDropped() {
         let name = "AppSettingsStoreTests.\(UUID().uuidString)"

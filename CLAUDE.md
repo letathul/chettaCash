@@ -4,8 +4,9 @@
 - **Fast Domain Loop** (no simulator, ~1s): `swift test --package-path LocalPackages/Domain`
 - **Fast Data Loop**: `swift test --package-path LocalPackages/Data`
 - **Regenerate Project** (after adding files or targets): `./Scripts/generate.sh` — use this, NOT bare `xcodegen generate`, which wipes the hand-written test schemes.
-- **Build All Modules**: `xcodebuild -workspace ChettaCash.xcworkspace -scheme ChettaCashApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build`
-- **Run Unit Tests**: `xcodebuild test -workspace ChettaCash.xcworkspace -scheme DomainTests -destination 'platform=iOS Simulator,name=iPhone 17 Pro'`
+- **Build All Modules**: `xcodebuild -workspace ChettaCash.xcworkspace -scheme ChettaCashApp -destination 'id=<udid>' build`
+- **Run Unit Tests**: the same `-destination`, with `-scheme DomainTests` / `DataTests` / `FeaturesTests` / `AppTests`.
+- **Pick the destination by `id`, never by `name`.** Two iOS 26.5 runtimes are installed, so `platform=iOS Simulator,name=iPhone 17 Pro` is ambiguous — `xcodebuild` falls back to My Mac and fails with *"My Mac's macOS platform doesn't match"*. Get the udid once with `xcrun simctl list devices available` and reuse it; it is stable per machine.
 - **Run SwiftLint**: `swiftlint lint` — run it from the repo root and do NOT pass `--config`. Auto-discovery finds `.swiftlint.yml` at the root and also honours the nested configs under `LocalPackages/*/Tests`; passing `--config` explicitly makes SwiftLint ignore nested configs, which floods the output with `missing_docs` warnings on test declarations.
 
 ## Tooling

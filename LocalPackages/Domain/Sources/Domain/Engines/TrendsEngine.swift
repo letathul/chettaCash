@@ -88,6 +88,37 @@ public enum TrendsEngine {
         return TrendSeries(points: points)
     }
 
+    /// Monthly income over the trailing months.
+    ///
+    /// - Parameters:
+    ///   - transactions: Every transaction.
+    ///   - months: How many months to cover.
+    ///   - reference: The month the series ends in.
+    ///   - calendar: The calendar deciding month boundaries.
+    /// - Returns: The series, oldest month first.
+    public static func monthlyIncome(
+        transactions: [Transaction],
+        months: Int = monthCount,
+        reference: Date = .now,
+        calendar: Calendar = .current
+    ) -> TrendSeries {
+        let points = monthStarts(months: months, reference: reference, calendar: calendar)
+            .map { start -> TrendPoint in
+                guard let range = monthRange(containing: start, calendar: calendar) else {
+                    return TrendPoint(monthStart: start, cents: 0)
+                }
+                return TrendPoint(
+                    monthStart: start,
+                    cents: TotalsEngine.incomeTotalCents(
+                        transactions: transactions,
+                        in: range,
+                        asOf: min(range.upperBound, reference)
+                    )
+                )
+            }
+        return TrendSeries(points: points)
+    }
+
     /// Monthly net worth at each month's end.
     ///
     /// An account is counted only from its opening-balance date onward, so months

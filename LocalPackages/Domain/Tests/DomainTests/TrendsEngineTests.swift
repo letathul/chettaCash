@@ -115,6 +115,24 @@ struct TrendsEngineTests {
         #expect(series.deltaCents == 3_000)
     }
 
+    @Test("Monthly income counts that month's posted income only")
+    func monthlyIncomeBuckets() {
+        let account = UUID()
+        let transactions = [
+            Transaction(amountCents: 200_000, type: .income, accountID: account, date: date(2026, 8, 1)),
+            spend(1_000, accountID: account, when: date(2026, 8, 3)),
+            Transaction(amountCents: 50_000, type: .income, accountID: account, date: date(2026, 9, 2))
+        ]
+
+        let series = TrendsEngine.monthlyIncome(
+            transactions: transactions, reference: date(2026, 9, 12), calendar: calendar
+        )
+
+        #expect(series.points[4].cents == 200_000, "August")
+        #expect(series.points[5].cents == 50_000, "September")
+        #expect(series.deltaCents == -150_000)
+    }
+
     @Test("Net worth includes cards and tracks month by month")
     func netWorthSeries() {
         let chequing = Account(

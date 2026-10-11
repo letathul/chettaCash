@@ -7,6 +7,8 @@ enum DeltaMetric {
     case spend
     /// Net worth. An increase is the welcome direction, so it reads green.
     case netWorth
+    /// Income. An increase is the welcome direction, so it reads green.
+    case income
 }
 
 /// A month-over-month change badge (§7.1, §12).
@@ -29,7 +31,7 @@ struct DeltaBadge: View {
     private var isFavourable: Bool {
         switch metric {
         case .spend: return deltaCents <= 0
-        case .netWorth: return deltaCents >= 0
+        case .netWorth, .income: return deltaCents >= 0
         }
     }
 

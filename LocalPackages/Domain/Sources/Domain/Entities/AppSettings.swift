@@ -34,6 +34,13 @@ public final class AppSettings {
     /// the user dismisses the note. Creating an account on the user's behalf is never
     /// silent (§7.10).
     public var showsStarterAccountNote: Bool = false
+    /// The account the Dashboard is scoped to, or `nil` to show every open account (S7.1).
+    ///
+    /// Lets someone with a dedicated spending account hide balances they check less
+    /// often (a savings account, say) without closing or hiding those accounts anywhere
+    /// else. An id that no longer resolves to an open account -- closed, deleted -- is
+    /// treated exactly like `nil` rather than erroring.
+    public var focusedAccountID: UUID?
     /// The under-development features currently switched on.
     ///
     /// Seeded from ``FeatureFlag/isEnabledByDefault`` rather than left empty, so a flag

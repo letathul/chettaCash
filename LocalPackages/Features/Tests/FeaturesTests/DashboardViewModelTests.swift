@@ -167,8 +167,8 @@ struct DashboardViewModelTests {
         #expect(harness.model.digest.spentTodayCents == 2_450)
     }
 
-    @Test("The account strip shows open accounts only")
-    func stripExcludesClosedAccounts() async {
+    @Test("The carousel shows one page per open account, after the All accounts page")
+    func carouselExcludesClosedAccounts() async {
         let harness = await makeHarness()
         var closed = harness.chequing
         closed.isClosed = true
@@ -177,6 +177,8 @@ struct DashboardViewModelTests {
 
         #expect(harness.model.openAccounts.count == 1)
         #expect(harness.model.accounts.count == 2, "closed accounts stay in history")
+        #expect(harness.model.heroPages.count == 2, "one open account, behind All accounts")
+        #expect(harness.model.heroPages.first?.accountID == nil)
     }
 
     @Test("Recent activity lists posted transactions newest first")
@@ -221,13 +223,24 @@ struct DashboardViewModelTests {
         #expect(harness.model.activeSubscriptions.map(\.name) == ["Streaming"])
     }
 
-    @Test("Trend series cover six months and end at the current figures")
-    func trendSeriesShape() async {
+    @Test("The All accounts page leads the carousel and charts thirty days of net worth")
+    func aggregatePageLeadsTheCarousel() async {
         let harness = await makeHarness()
 
-        #expect(harness.model.spendTrend.points.count == 6)
-        #expect(harness.model.netWorthTrend.points.count == 6)
-        #expect(harness.model.netWorthTrend.currentCents == harness.model.netWorthCents)
+        let first = harness.model.heroPages.first
+        #expect(first?.accountID == nil)
+        #expect(first?.title == "All accounts")
+        #expect(first?.series.points.count == BalanceSeriesEngine.dayCount)
+    }
+
+    @Test("Each account page charts that account alone, ending at its current balance")
+    func accountPagesChartTheirOwnAccount() async {
+        let harness = await makeHarness()
+
+        let pages = harness.model.heroPages.filter { $0.accountID != nil }
+        #expect(pages.map(\.accountID) == harness.model.openAccounts.map { $0.id })
+        let chequing = pages.first { $0.accountID == harness.chequing.id }
+        #expect(chequing?.series.currentCents == 500_000)
     }
 
     @Test("A load failure surfaces a retryable banner")

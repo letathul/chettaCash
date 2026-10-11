@@ -28,6 +28,8 @@ public struct UserDefaultsAppSettingsStore: AppSettingsStore {
         static let hasCompletedOnboarding = "settings.hasCompletedOnboarding"
         /// Key for whether the starter-account note is still owed.
         static let showsStarterAccountNote = "settings.showsStarterAccountNote"
+        /// Key for the Dashboard's focused account.
+        static let focusedAccountID = "settings.focusedAccountID"
         /// Whether the Siri tip has been dismissed.
         static let hasDismissedShortcutTip = "settings.hasDismissedShortcutTip"
         /// Key for the under-development features that are switched on.
@@ -67,6 +69,11 @@ public struct UserDefaultsAppSettingsStore: AppSettingsStore {
         settings.hasCompletedOnboarding = defaults.bool(forKey: Key.hasCompletedOnboarding)
         settings.showsStarterAccountNote = defaults.bool(forKey: Key.showsStarterAccountNote)
         settings.hasDismissedShortcutTip = defaults.bool(forKey: Key.hasDismissedShortcutTip)
+        // Unlike the flags above, "no key" here must mean nil even when the caller's
+        // settings object already held a value — the absence itself is meaningful
+        // (the user cleared their choice), not just "never written".
+        settings.focusedAccountID = defaults.string(forKey: Key.focusedAccountID)
+            .flatMap { UUID(uuidString: $0) }
         // `if let` rather than a bare read: an unwritten key must leave the defaults from
         // `FeatureFlag.isEnabledByDefault` alone. `compactMap` drops raw values whose flag
         // a later build removed, so a retired flag cleans itself up on the next save.
@@ -91,5 +98,10 @@ public struct UserDefaultsAppSettingsStore: AppSettingsStore {
             settings.enabledFeatureFlags.map(\.rawValue).sorted(),
             forKey: Key.enabledFeatureFlags
         )
+        if let focusedAccountID = settings.focusedAccountID {
+            defaults.set(focusedAccountID.uuidString, forKey: Key.focusedAccountID)
+        } else {
+            defaults.removeObject(forKey: Key.focusedAccountID)
+        }
     }
 }

@@ -3,9 +3,11 @@ import Domain
 
 /// The Dashboard (§7.1).
 ///
-/// Sections top to bottom: Today card, account strip, quick actions, Trends, Recent
-/// transactions. Everything time-sensitive lives in the Today card, so nothing else
-/// here carries a badge.
+/// A greeting, the hero account carousel, and today's transactions. Everything
+/// time-sensitive lives in the carousel's digest chips and behind its chevron, so
+/// nothing else here carries a badge. "Log transaction" lives in the tab bar and
+/// "Add product" is the floating button in the bottom-trailing corner — see
+/// ``RootTabView``.
 public struct DashboardView: View {
     /// The screen's view model.
     @State private var model: DashboardViewModel
@@ -19,17 +21,10 @@ public struct DashboardView: View {
     @State private var isSearching = false
     /// Whether the purchase picker is showing (§7.8).
     @State private var isPickingPurchase = false
-    /// Whether the Add Transaction sheet is showing (§7.1).
-    @State private var isAddingTransaction = false
     /// The transaction whose detail screen is open.
     @State private var selectedTransaction: Domain.Transaction?
     /// Opens the Ledger tab.
     private let onSeeAll: () -> Void
-    /// Width of an account mini-card, which grows with Dynamic Type (§12).
-    ///
-    /// A fixed width truncates the name and the balance at accessibility sizes. The
-    /// strip scrolls horizontally, so widening costs nothing.
-    @ScaledMetric(relativeTo: .subheadline) private var accountCardWidth: CGFloat = 150
 
     /// Creates the screen.
     /// - Parameters:
@@ -70,24 +65,25 @@ public struct DashboardView: View {
                     } else if model.hasNoAccounts {
                         emptyState
                     } else {
-                        todayCard
-                        accountStrip
-                        quickActions
-                        TrendsSection(
-                            spend: model.spendTrend,
-                            netWorth: model.netWorthTrend,
-                            currencyCode: model.settings.currencyCode
-                        )
-                        recentSection
+                        carousel
+                        todaySection
                     }
                 }
                 .padding(16)
+                // The floating button sits over this content, so the last row has to
+                // be able to scroll clear of it rather than hide underneath.
+                .padding(.bottom, showsAddProductButton ? 76 : 0)
             }
             .background(Palette.appBackground)
+            .overlay(alignment: .bottomTrailing) {
+                if showsAddProductButton {
+                    addProductButton
+                }
+            }
             .navigationDestination(item: $selectedTransaction) { transaction in
                 TransactionDetailView(model: ledgerModel, transaction: transaction)
             }
-            .navigationTitle("Dashboard")
+            .navigationTitle(Self.greeting())
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
@@ -100,14 +96,11 @@ public struct DashboardView: View {
             }
         }
         .task { await model.load() }
-        // The recent rows carry formatted amounts, so a currency switch invalidates them.
+        // The rows and hero pages carry formatted amounts, so a currency switch
+        // invalidates them.
         .onChange(of: model.settings.currencyCode) { model.refresh() }
         .sheet(isPresented: $isShowingToday) {
             TodaySheet(model: model)
-        }
-        // The same form the Ledger's + button opens, over the same shared view model.
-        .sheet(isPresented: $isAddingTransaction, onDismiss: reload) {
-            TransactionSheet(model: ledgerModel, editing: nil)
         }
         // A product is always part of a purchase (§7.8), so adding one starts by
         // choosing which — or by recording that nothing was paid for it.
@@ -119,120 +112,74 @@ public struct DashboardView: View {
         }
     }
 
-    /// The Today card, tappable into the Today sheet.
-    private var todayCard: some View {
-        Button {
-            isShowingToday = true
-        } label: {
-            TodayCard(
-                digest: model.digest,
-                availableCashCents: model.availableCashCents,
-                netWorthCents: model.netWorthCents,
-                currencyCode: model.settings.currencyCode
-            )
+    /// Whether the floating "Add product" button is showing.
+    private var showsAddProductButton: Bool {
+        !model.isLoading && !model.hasNoAccounts
+    }
+
+    /// The greeting the screen is titled with.
+    ///
+    /// A `static func` rather than a computed property so it is evaluated once per
+    /// body rather than captured as view state that would go stale at midnight.
+    ///
+    /// - Parameters:
+    ///   - now: The moment to greet for.
+    ///   - calendar: The calendar deciding the hour.
+    /// - Returns: The greeting.
+    static func greeting(now: Date = .now, calendar: Calendar = .current) -> String {
+        switch calendar.component(.hour, from: now) {
+        case 0..<12: return "Good morning"
+        case 12..<18: return "Good afternoon"
+        default: return "Good evening"
+        }
+    }
+
+    /// The hero carousel, one page per open account behind "All accounts".
+    private var carousel: some View {
+        HeroAccountCarousel(
+            pages: model.heroPages,
+            digest: model.digest,
+            currencyCode: model.settings.currencyCode,
+            focusedAccountID: focusedAccountBinding,
+            onOpenToday: { isShowingToday = true }
+        )
+    }
+
+    /// A two-way binding onto the focused-account setting.
+    ///
+    /// Writes go through ``DashboardViewModel/setFocusedAccount(_:)`` so the choice is
+    /// persisted and every derived figure recomputes, rather than just updating local
+    /// view state.
+    private var focusedAccountBinding: Binding<UUID?> {
+        Binding(
+            get: { model.settings.focusedAccountID },
+            set: { model.setFocusedAccount($0) }
+        )
+    }
+
+    /// The floating "Add product" action (§7.1).
+    ///
+    /// "Log transaction" lives in the tab bar (``RootTabView``), so this is the only
+    /// quick action the Dashboard itself still owns.
+    private var addProductButton: some View {
+        Button { isPickingPurchase = true } label: {
+            Image(systemName: "plus")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(width: 56, height: 56)
+                .background(Palette.brandPurple, in: .circle)
+                .shadow(color: Palette.cardShadow, radius: 6, x: 0, y: 3)
         }
         .buttonStyle(.plain)
+        .padding(.trailing, 20)
+        .padding(.bottom, 20)
+        .accessibilityLabel("Add product")
     }
 
-    /// Horizontally scrolling account mini-cards — reference data, so it sits below Today.
-    private var accountStrip: some View {
+    /// Today's posted transactions, or the most recent ones when today is quiet (§7.1).
+    private var todaySection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Accounts").sectionLabel()
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(model.openAccounts) { account in
-                        accountCard(account)
-                    }
-                }
-                .padding(.horizontal, 1)
-            }
-        }
-    }
-
-    /// One account mini-card.
-    /// - Parameter account: The account to show.
-    /// - Returns: The card view.
-    private func accountCard(_ account: Domain.Account) -> some View {
-        CardContainer(cornerRadius: 16) {
-            VStack(alignment: .leading, spacing: 6) {
-                Image(systemName: account.kind == .card ? "creditcard.fill" : "banknote.fill")
-                    .font(.callout)
-                    .foregroundStyle(
-                        account.kind == .card ? Palette.attentionAmber : Palette.brandPurple
-                    )
-                    .accessibilityHidden(true)
-                Text(account.name)
-                    .font(Typography.rowSecondary)
-                    .foregroundStyle(Palette.textSecondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(money(account.cachedBalanceCents))
-                    .moneyText(Typography.rowPrimary)
-                    .foregroundStyle(
-                        account.cachedBalanceCents < 0 ? Palette.negativeRed : Palette.textPrimary
-                    )
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-            }
-        }
-        .frame(width: accountCardWidth)
-    }
-
-    /// The two quick actions (§7.1).
-    private var quickActions: some View {
-        HStack(spacing: 10) {
-            Button(action: beginLoggingTransaction) {
-                Text("Log transaction")
-                    .font(Typography.rowPrimary.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Palette.brandPurple, in: .capsule)
-            }
-            .buttonStyle(.plain)
-            Button { isPickingPurchase = true } label: {
-                Text("Add product")
-                    .font(Typography.rowPrimary)
-                    .foregroundStyle(Palette.brandPurple)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Palette.surface, in: .capsule)
-                    .overlay { Capsule().strokeBorder(Palette.borderSubtle, lineWidth: 1) }
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
-    /// Opens the Add Transaction sheet, loading the Ledger first if it is still cold.
-    ///
-    /// ``TransactionSheet`` seeds its form from `selectableAccounts` at *init*, so a sheet
-    /// presented over an unloaded Ledger opens with no account chosen and empty pickers —
-    /// and the Dashboard may well be the only tab visited. A no-op on every later tap.
-    private func beginLoggingTransaction() {
-        Task {
-            await ledgerModel.loadIfNeeded()
-            isAddingTransaction = true
-        }
-    }
-
-    /// Reloads after a sheet that may have written something.
-    ///
-    /// The two view models hold independent snapshots, so saving through the Ledger's
-    /// leaves the Today card, balances, trends and Recent rows stale until this runs.
-    private func reload() {
-        Task { await model.load() }
-    }
-
-    /// The most recent posted transactions, with a link into the Ledger.
-    private var recentSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Recent").sectionLabel()
-                Spacer()
-                Button("See all", action: onSeeAll)
-                    .font(Typography.rowSecondary.weight(.semibold))
-                    .foregroundStyle(Palette.brandPurple)
-            }
+            Text(model.recentSectionTitle).sectionLabel()
             if model.recentRows.isEmpty {
                 CardContainer {
                     FilteredEmptyNotice(message: "Nothing posted yet.")
@@ -240,6 +187,7 @@ public struct DashboardView: View {
             } else {
                 CardContainer {
                     VStack(spacing: 12) {
+                        if model.isShowingRecentFallback { fallbackNote }
                         ForEach(model.recentRows) { row in
                             if row.id != model.recentRows.first?.id {
                                 Divider().overlay(Palette.borderSubtle)
@@ -251,10 +199,29 @@ public struct DashboardView: View {
                             }
                             .buttonStyle(.plain)
                         }
+                        Divider().overlay(Palette.borderSubtle)
+                        seeAllButton
                     }
                 }
             }
         }
+    }
+
+    /// Says why the list is showing older transactions on a quiet day.
+    private var fallbackNote: some View {
+        Text("No activity today — showing recent")
+            .font(Typography.rowSecondary)
+            .foregroundStyle(Palette.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The link into the Ledger, which the mock places inside the card.
+    private var seeAllButton: some View {
+        Button("See all transactions", action: onSeeAll)
+            .font(Typography.rowSecondary.weight(.semibold))
+            .foregroundStyle(Palette.brandPurple)
+            .frame(maxWidth: .infinity)
+            .tappableSurface()
     }
 
     /// The Dashboard's empty state, shown only when there are zero accounts (§7.1).
@@ -268,12 +235,5 @@ public struct DashboardView: View {
                 action: onSeeAll
             )
         }
-    }
-
-    /// Formats an amount using the display currency.
-    /// - Parameter cents: The amount in cents.
-    /// - Returns: The formatted string.
-    private func money(_ cents: Int) -> String {
-        CurrencyFormatter.string(fromCents: cents, currencyCode: model.settings.currencyCode)
     }
 }

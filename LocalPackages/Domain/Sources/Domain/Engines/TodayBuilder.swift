@@ -251,7 +251,7 @@ public enum TodayBuilder {
     ///   - date: Any moment inside the day.
     ///   - calendar: The calendar deciding day boundaries.
     /// - Returns: From the day's first instant to its last.
-    private static func dayRange(containing date: Date, calendar: Calendar) -> ClosedRange<Date> {
+    public static func dayRange(containing date: Date, calendar: Calendar = .current) -> ClosedRange<Date> {
         let start = calendar.startOfDay(for: date)
         let end = calendar.date(byAdding: .day, value: 1, to: start) ?? date
         return start...end.addingTimeInterval(-0.001)
