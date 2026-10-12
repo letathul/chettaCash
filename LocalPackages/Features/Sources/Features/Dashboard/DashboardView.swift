@@ -3,9 +3,10 @@ import Domain
 
 /// The Dashboard (§7.1).
 ///
-/// Sections top to bottom: Today card, account strip, quick actions, Trends, Recent
-/// transactions. Everything time-sensitive lives in the Today card, so nothing else
-/// here carries a badge.
+/// Sections top to bottom: the month's spend, the month at a glance, what needs the user,
+/// quick actions, spend by account, Spending, Recent transactions. Everything
+/// time-sensitive lives in "Needs you", so nothing else here carries a badge. Every
+/// figure comes from expenses alone: the app does not expect income to be logged.
 public struct DashboardView: View {
     /// The screen's view model.
     @State private var model: DashboardViewModel
@@ -25,12 +26,6 @@ public struct DashboardView: View {
     @State private var selectedTransaction: Domain.Transaction?
     /// Opens the Ledger tab.
     private let onSeeAll: () -> Void
-    /// Width of an account mini-card, which grows with Dynamic Type (§12).
-    ///
-    /// A fixed width truncates the name and the balance at accessibility sizes. The
-    /// strip scrolls horizontally, so widening costs nothing.
-    @ScaledMetric(relativeTo: .subheadline) private var accountCardWidth: CGFloat = 150
-
     /// Creates the screen.
     /// - Parameters:
     ///   - model: The screen's view model.
@@ -71,11 +66,20 @@ public struct DashboardView: View {
                         emptyState
                     } else {
                         todayCard
-                        accountStrip
+                        MonthGlanceSection(
+                            summary: model.spendSummary,
+                            dueWithinWeekCents: model.dueWithinWeekCents,
+                            currencyCode: model.settings.currencyCode
+                        )
+                        NeedsYouSection(
+                            digest: model.digest,
+                            currencyCode: model.settings.currencyCode
+                        ) { isShowingToday = true }
                         quickActions
+                        SpendByAccountSection(rows: model.accountSpendRows)
                         TrendsSection(
                             spend: model.spendTrend,
-                            netWorth: model.netWorthTrend,
+                            slices: model.categorySlices,
                             currencyCode: model.settings.currencyCode
                         )
                         recentSection
@@ -125,57 +129,12 @@ public struct DashboardView: View {
             isShowingToday = true
         } label: {
             TodayCard(
-                digest: model.digest,
-                availableCashCents: model.availableCashCents,
-                netWorthCents: model.netWorthCents,
+                summary: model.spendSummary,
+                spentTodayCents: model.digest.spentTodayCents,
                 currencyCode: model.settings.currencyCode
             )
         }
         .buttonStyle(.plain)
-    }
-
-    /// Horizontally scrolling account mini-cards — reference data, so it sits below Today.
-    private var accountStrip: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Accounts").sectionLabel()
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(model.openAccounts) { account in
-                        accountCard(account)
-                    }
-                }
-                .padding(.horizontal, 1)
-            }
-        }
-    }
-
-    /// One account mini-card.
-    /// - Parameter account: The account to show.
-    /// - Returns: The card view.
-    private func accountCard(_ account: Domain.Account) -> some View {
-        CardContainer(cornerRadius: 16) {
-            VStack(alignment: .leading, spacing: 6) {
-                Image(systemName: account.kind == .card ? "creditcard.fill" : "banknote.fill")
-                    .font(.callout)
-                    .foregroundStyle(
-                        account.kind == .card ? Palette.attentionAmber : Palette.brandPurple
-                    )
-                    .accessibilityHidden(true)
-                Text(account.name)
-                    .font(Typography.rowSecondary)
-                    .foregroundStyle(Palette.textSecondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(money(account.cachedBalanceCents))
-                    .moneyText(Typography.rowPrimary)
-                    .foregroundStyle(
-                        account.cachedBalanceCents < 0 ? Palette.negativeRed : Palette.textPrimary
-                    )
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-            }
-        }
-        .frame(width: accountCardWidth)
     }
 
     /// The two quick actions (§7.1).
@@ -268,12 +227,5 @@ public struct DashboardView: View {
                 action: onSeeAll
             )
         }
-    }
-
-    /// Formats an amount using the display currency.
-    /// - Parameter cents: The amount in cents.
-    /// - Returns: The formatted string.
-    private func money(_ cents: Int) -> String {
-        CurrencyFormatter.string(fromCents: cents, currencyCode: model.settings.currencyCode)
     }
 }

@@ -19,16 +19,8 @@ extension DashboardViewModel {
         )
 
         openAccounts = accounts.filter { !$0.isClosed }
-        availableCashCents = BalanceEngine.availableCashCents(
-            accounts: accounts, transactions: transactions
-        )
-        netWorthCents = BalanceEngine.netWorthCents(
-            accounts: accounts, transactions: transactions
-        )
         spendTrend = TrendsEngine.monthlySpend(transactions: transactions)
-        netWorthTrend = TrendsEngine.monthlyNetWorth(
-            accounts: accounts, transactions: transactions
-        )
+        refreshSummary()
         activeSubscriptions = rules.filter(\.isActive).sorted { $0.name < $1.name }
 
         // One pass over the transactions for the next charge of every rule, rather than
@@ -78,6 +70,7 @@ extension DashboardViewModel {
             subtitle: "\(label) · \(accountName)",
             amountText: cents == 0 ? magnitude : (cents < 0 ? "−" : "+") + magnitude,
             tone: transaction.type == .income ? .positive : .primary,
+            hasReceipt: transaction.receiptFileID != nil,
             transaction: transaction
         )
     }
@@ -106,6 +99,8 @@ struct RecentRowModel: Identifiable, Hashable {
     let amountText: String
     /// Which palette entry the amount reads in.
     let tone: AmountTone
+    /// Whether a receipt is attached, shown as a paperclip.
+    let hasReceipt: Bool
     /// The transaction a tap opens, which is its read-only detail (§7.4).
     let transaction: Domain.Transaction
 }

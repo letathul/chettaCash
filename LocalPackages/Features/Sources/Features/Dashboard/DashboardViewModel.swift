@@ -34,6 +34,8 @@ public final class DashboardViewModel {
     public private(set) var categories: [Domain.Category] = []
     /// Active recurring rules.
     public private(set) var rules: [Domain.RecurringRule] = []
+    /// Every Vault product.
+    public private(set) var products: [Domain.Product] = []
     /// What needs the user's attention today.
     public private(set) var digest = TodayDigest()
     /// Whether the first load is still running.
@@ -95,14 +97,17 @@ public final class DashboardViewModel {
 
     /// Open accounts, which is what the account strip shows.
     public internal(set) var openAccounts: [Domain.Account] = []
-    /// Sum of every open spending account, excluding cards.
-    public internal(set) var availableCashCents = 0
-    /// Sum of every open account, cards included.
-    public internal(set) var netWorthCents = 0
+    /// This month's expense figures. Income never feeds them, so the Dashboard reads
+    /// correctly for someone who only tracks spending.
+    public internal(set) var spendSummary = SpendSummary()
+    /// What is about to leave in the next week: card statements and subscription charges.
+    public internal(set) var dueWithinWeekCents = 0
     /// Six months of spend.
     public internal(set) var spendTrend = TrendSeries(points: [])
-    /// Six months of net worth.
-    public internal(set) var netWorthTrend = TrendSeries(points: [])
+    /// The month's category split, largest first with "Other" last.
+    var categorySlices: [CategorySliceModel] = []
+    /// The "Spent by account" rows.
+    var accountSpendRows: [AccountSpendRowModel] = []
     /// The most recent posted transactions.
     public internal(set) var recentTransactions: [Domain.Transaction] = []
     /// Every active rule, for the subscriptions list (§7.2).
@@ -159,12 +164,13 @@ public final class DashboardViewModel {
             transactions = try await transactionRepository.transactions(accountID: nil, in: nil)
             categories = try await categoryRepository.allCategories()
             rules = try await recurringRuleRepository.rules(activeOnly: false)
+            products = try await productRepository.products()
             digest = TodayBuilder.digest(from: TodayInput(
                 accounts: accounts,
                 transactions: transactions,
                 statements: try await statementRepository.statements(accountID: nil),
                 rules: rules,
-                products: try await productRepository.products(),
+                products: products,
                 defaultLeadTime: settings.defaultReminderLeadTime
             ))
             errorMessage = nil

@@ -75,38 +75,90 @@ struct TrendChartCard: View {
     }
 }
 
-/// The two side-by-side trend charts (§7.1).
+/// The Spending section: six months of spend, then where this month's went (§7.1).
 ///
-/// They stack at accessibility text sizes rather than squeezing, which is the §12
-/// case the specification singles out as most likely to break.
+/// The cards stack rather than sit side by side, which is also what the §12 text-size
+/// case needs.
 struct TrendsSection: View {
     /// Six months of spend.
     let spend: TrendSeries
-    /// Six months of net worth.
-    let netWorth: TrendSeries
+    /// The month's category split, largest first.
+    let slices: [CategorySliceModel]
     /// The display currency.
     let currencyCode: String
 
-    /// The viewer's current text size.
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// The view body.
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Spending").sectionLabel()
+            TrendChartCard(
+                title: "Last 6 months", series: spend, metric: .spend, currencyCode: currencyCode
+            )
+            if !slices.isEmpty {
+                CategorySplitCard(slices: slices, currencyCode: currencyCode)
+            }
+        }
+    }
+}
+
+/// The month's spending split by category: one proportional bar and a legend (§7.1).
+///
+/// Each category keeps the colour it has everywhere else in the app, and the legend
+/// carries the name and amount, so colour is never the only signal (§12).
+struct CategorySplitCard: View {
+    /// The slices, largest first, with "Other" last.
+    let slices: [CategorySliceModel]
+    /// The display currency.
+    let currencyCode: String
 
     /// The view body.
     var body: some View {
-        let layout = dynamicTypeSize.isAccessibilitySize
-            ? AnyLayout(VStackLayout(spacing: 10))
-            : AnyLayout(HStackLayout(alignment: .top, spacing: 10))
-
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Trends").sectionLabel()
-            layout {
-                TrendChartCard(
-                    title: "Spend", series: spend, metric: .spend, currencyCode: currencyCode
-                )
-                TrendChartCard(
-                    title: "Net worth", series: netWorth, metric: .netWorth,
-                    currencyCode: currencyCode
-                )
+        let total = max(slices.reduce(0) { $0 + $1.cents }, 1)
+        CardContainer(cornerRadius: 16) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("By category").sectionLabel()
+                GeometryReader { proxy in
+                    HStack(spacing: 2) {
+                        ForEach(slices) { slice in
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(color(for: slice))
+                                .frame(width: max(4, proxy.size.width * CGFloat(slice.cents) / CGFloat(total)))
+                        }
+                    }
+                }
+                .frame(height: 10)
+                .accessibilityHidden(true)
+                VStack(spacing: 8) {
+                    ForEach(slices) { slice in
+                        HStack(spacing: 8) {
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(color(for: slice))
+                                .frame(width: 10, height: 10)
+                                .accessibilityHidden(true)
+                            Text(slice.label)
+                                .font(Typography.rowSecondary)
+                                .foregroundStyle(Palette.textPrimary)
+                                .lineLimit(1)
+                            Spacer(minLength: 8)
+                            Text(CurrencyFormatter.string(
+                                fromCents: slice.cents, currencyCode: currencyCode
+                            ))
+                            .moneyText(Typography.rowSecondary.weight(.semibold))
+                            .foregroundStyle(Palette.textPrimary)
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                }
             }
         }
+    }
+
+    /// The colour a slice is drawn in.
+    /// - Parameter slice: The slice.
+    /// - Returns: The category's swatch colour, or muted grey for "Other".
+    private func color(for slice: CategorySliceModel) -> Color {
+        slice.isOther
+            ? Palette.textSecondary
+            : CategoryPalette.swatch(for: slice.label, creationIndex: slice.sortIndex).foreground
     }
 }

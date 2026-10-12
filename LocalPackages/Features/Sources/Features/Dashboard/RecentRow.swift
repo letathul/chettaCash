@@ -22,6 +22,12 @@ struct RecentRow: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 8)
+            if row.hasReceipt {
+                Image(systemName: "paperclip")
+                    .font(Typography.rowSecondary)
+                    .foregroundStyle(Palette.brandPurple)
+                    .accessibilityLabel("Receipt attached")
+            }
             Text(row.amountText)
                 .moneyText(Typography.rowSecondary)
                 .foregroundStyle(row.tone.color)

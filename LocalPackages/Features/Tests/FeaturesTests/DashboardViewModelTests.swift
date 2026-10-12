@@ -93,13 +93,13 @@ struct DashboardViewModelTests {
         let harness = await makeHarness()
         try await harness.transactions.save(parkedExpense())
         await harness.model.load()
-        let before = harness.model.availableCashCents
+        let before = availableCash(harness.model)
         let item = try #require(harness.model.digest.unassignedEntries.first)
 
         await harness.model.assign(item, to: harness.chequing.id)
 
         #expect(before == 500_000, "a parked entry charges nobody")
-        #expect(harness.model.availableCashCents == 500_000 - 4_210)
+        #expect(availableCash(harness.model) == 500_000 - 4_210)
         #expect(
             harness.model.digest.unassignedEntries.isEmpty,
             "and it leaves the Today card once it is filed"
@@ -115,26 +115,58 @@ struct DashboardViewModelTests {
         )
     }
 
-    @Test("Available Cash excludes the card while Net Worth includes it")
-    func headlineFigures() async {
-        let harness = await makeHarness()
-
-        #expect(harness.model.availableCashCents == 500_000)
-        #expect(harness.model.netWorthCents == 380_000)
+    /// Spendable cash across the model's accounts, for tests of balance movement.
+    /// - Parameter model: The loaded view model.
+    /// - Returns: The sum of open spending accounts, in cents.
+    private func availableCash(_ model: DashboardViewModel) -> Int {
+        BalanceEngine.availableCashCents(
+            accounts: model.accounts, transactions: model.transactions
+        )
     }
 
-    @Test("A posted expense moves both figures by the same amount")
-    func figuresFollowSpending() async {
+    @Test("The month's spend counts posted expenses and ignores income")
+    func monthSpendIgnoresIncome() async {
         let harness = await makeHarness()
 
         try? await harness.transactions.save(Domain.Transaction(
             amountCents: 4_500, type: .expense, accountID: harness.chequing.id,
-            date: .now.addingTimeInterval(-3_600)
+            date: .now.addingTimeInterval(-60)
+        ))
+        try? await harness.transactions.save(Domain.Transaction(
+            amountCents: 300_000, type: .income, accountID: harness.chequing.id,
+            date: .now.addingTimeInterval(-60)
         ))
         await harness.model.load()
 
-        #expect(harness.model.availableCashCents == 495_500)
-        #expect(harness.model.netWorthCents == 375_500)
+        #expect(harness.model.spendSummary.monthSpendCents == 4_500)
+        #expect(harness.model.spendSummary.transactionCount == 1)
+    }
+
+    @Test("Spent by account lists each account that took spending, largest first")
+    func spendByAccount() async {
+        let harness = await makeHarness()
+        for (cents, account) in [(1_000, harness.chequing), (7_000, harness.card)] {
+            try? await harness.transactions.save(Domain.Transaction(
+                amountCents: cents, type: .expense, accountID: account.id,
+                date: .now.addingTimeInterval(-60)
+            ))
+        }
+        await harness.model.load()
+
+        #expect(harness.model.accountSpendRows.map(\.name) == ["Visa", "Chequing"])
+        #expect(harness.model.accountSpendRows.map(\.spendCents) == [7_000, 1_000])
+    }
+
+    @Test("A parked entry shows as spending with no account")
+    func parkedEntryAppearsInAccountRows() async throws {
+        let harness = await makeHarness()
+        try await harness.transactions.save(parkedExpense())
+        await harness.model.load()
+
+        let parked = harness.model.accountSpendRows.first { $0.id == nil }
+        let row = try #require(parked)
+        #expect(row.name == "No account")
+        #expect(row.spendCents == 4_210)
     }
 
     @Test("The empty state applies only when there are zero accounts")
@@ -221,13 +253,12 @@ struct DashboardViewModelTests {
         #expect(harness.model.activeSubscriptions.map(\.name) == ["Streaming"])
     }
 
-    @Test("Trend series cover six months and end at the current figures")
+    @Test("The spend trend covers six months and ends at this month's spend")
     func trendSeriesShape() async {
         let harness = await makeHarness()
 
         #expect(harness.model.spendTrend.points.count == 6)
-        #expect(harness.model.netWorthTrend.points.count == 6)
-        #expect(harness.model.netWorthTrend.currentCents == harness.model.netWorthCents)
+        #expect(harness.model.spendTrend.currentCents == harness.model.spendSummary.monthSpendCents)
     }
 
     @Test("A load failure surfaces a retryable banner")

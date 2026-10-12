@@ -1,18 +1,15 @@
 import SwiftUI
 import Domain
 
-/// The Today card (§7.2).
+/// The Dashboard's hero card: what has been spent this month (§7.1).
 ///
-/// On a quiet day it still shows the balances plus an explicit "Nothing due" line.
-/// It never hides itself, and it never shows empty chips — each chip appears only
-/// when it has something to report.
+/// It answers "how am I doing" from expenses alone, so it reads correctly whether or not
+/// the user ever logs income. What needs attention lives in ``NeedsYouSection`` below it.
 struct TodayCard: View {
-    /// What needs attention today.
-    let digest: TodayDigest
-    /// Available Cash, the primary figure.
-    let availableCashCents: Int
-    /// Net Worth, the secondary line.
-    let netWorthCents: Int
+    /// This month's expense figures.
+    let summary: SpendSummary
+    /// Spent today, in cents.
+    let spentTodayCents: Int
     /// The display currency.
     let currencyCode: String
 
@@ -20,85 +17,61 @@ struct TodayCard: View {
     var body: some View {
         HeroCard {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Today · \(Date.now, format: .dateTime.weekday(.abbreviated).day().month(.abbreviated))")
+                Text("Spent in \(Date.now, format: .dateTime.month(.wide))")
                     .font(Typography.rowSecondary)
                     .opacity(0.9)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Available Cash")
-                        .font(Typography.rowSecondary)
-                        .opacity(0.9)
-                    Text(money(availableCashCents)).moneyText()
-                }
+                Text(money(summary.monthSpendCents)).moneyText()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
 
-                Text("Net Worth \(money(netWorthCents))")
-                    .font(Typography.rowSecondary)
-                    .opacity(0.9)
+                badges
 
-                if digest.isQuietDay {
-                    Text("Nothing due")
-                        .font(Typography.rowPrimary)
-                        .opacity(0.95)
-                } else {
-                    chips
-                }
+                SpendPaceChart(
+                    current: summary.cumulativeThisMonth,
+                    previous: summary.cumulativePreviousMonth
+                )
+                .frame(height: 56)
             }
         }
         .accessibilityElement(children: .combine)
         .accessibilityHint("Double tap to see what needs you")
     }
 
-    /// Status chips, each shown only when it has something to report.
-    private var chips: some View {
+    /// The "today" chip and the like-for-like comparison.
+    private var badges: some View {
         FlowLayout(spacing: 8) {
-            if !digest.missedPayments.isEmpty {
-                missedChip
+            if spentTodayCents > 0 {
+                Text("\(money(spentTodayCents)) today")
+                    .font(Typography.errorCaption.weight(.semibold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(.white.opacity(0.2), in: .capsule)
             }
-            if digest.spentTodayCents > 0 {
-                chip("\(money(digest.spentTodayCents)) spent today")
-            }
-            if !digest.dueSoon.isEmpty {
-                chip("\(digest.dueSoon.count) due soon")
-            }
-            if !digest.upcomingCharges.isEmpty {
-                chip("\(digest.upcomingCharges.count) charging soon")
-            }
-            if !digest.endingSoon.isEmpty {
-                chip("\(digest.endingSoon.count) ending soon")
+            if summary.previousMonthToDateCents > 0 {
+                comparison
             }
         }
     }
 
-    /// The missed-payment chip (§4.6).
-    ///
-    /// Unlike the others it inverts — red on white rather than white on translucent —
-    /// because a chip that reads like every other chip is not a warning. The icon
-    /// carries the same meaning, so colour is never the only signal (§12).
-    private var missedChip: some View {
-        let total = digest.missedPayments.reduce(0) { $0 + $1.outstandingCents }
+    /// "Up 8% vs this point last month". White on the hero in both directions, with an
+    /// arrow carrying the direction, because red does not read on the purple (§12).
+    private var comparison: some View {
+        let delta = summary.deltaAgainstPreviousCents
+        let percent = abs(delta) * 100 / summary.previousMonthToDateCents
+        let direction = delta > 0 ? "Up" : (delta < 0 ? "Down" : "Level")
+        let symbol = delta > 0 ? "arrow.up.right" : (delta < 0 ? "arrow.down.right" : "minus")
+        let text = delta == 0
+            ? "Level with this point last month"
+            : "\(direction) \(percent)% vs this point last month"
         return HStack(spacing: 4) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(Typography.errorCaption)
-            Text("\(money(total)) past due")
+            Image(systemName: symbol)
                 .font(Typography.errorCaption.weight(.bold))
+                .accessibilityHidden(true)
+            Text(text)
+                .font(Typography.rowSecondary)
         }
-        .foregroundStyle(Palette.negativeRedOnHero)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(.white, in: .capsule)
-        .accessibilityLabel("\(money(total)) past due on a card statement")
-    }
-
-    /// One status chip.
-    /// - Parameter text: What the chip reports.
-    /// - Returns: The chip view.
-    private func chip(_ text: String) -> some View {
-        Text(text)
-            .font(Typography.errorCaption.weight(.semibold))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(.white.opacity(0.2), in: .capsule)
+        .opacity(0.95)
     }
 
     /// Formats an amount using the display currency.
@@ -106,5 +79,90 @@ struct TodayCard: View {
     /// - Returns: The formatted string.
     private func money(_ cents: Int) -> String {
         CurrencyFormatter.string(fromCents: cents, currencyCode: currencyCode)
+    }
+}
+
+/// This month's running spend drawn against last month's (§7.1).
+///
+/// Last month is dashed and fainter; this month is solid and ends in a dot at today.
+/// Both share one scale so the gap between them is the real gap.
+struct SpendPaceChart: View {
+    /// Running spend at the end of each day this month.
+    let current: [Int]
+    /// Running spend at the end of each day of last month.
+    let previous: [Int]
+
+    /// The view body.
+    var body: some View {
+        let dayCount = max(previous.count, current.count, 2)
+        let peak = max(current.max() ?? 0, previous.max() ?? 0, 1)
+        VStack(spacing: 4) {
+            GeometryReader { proxy in
+                let size = proxy.size
+                ZStack {
+                    line(previous, dayCount: dayCount, peak: peak, size: size)
+                        .stroke(
+                            .white.opacity(0.55),
+                            style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [4, 4])
+                        )
+                    line(current, dayCount: dayCount, peak: peak, size: size)
+                        .stroke(.white, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                    if let last = current.last {
+                        Circle()
+                            .fill(.white)
+                            .frame(width: 8, height: 8)
+                            .position(point(
+                                index: current.count - 1, value: last,
+                                dayCount: dayCount, peak: peak, size: size
+                            ))
+                    }
+                }
+            }
+            HStack {
+                Text("1st")
+                Spacer()
+                Text("- - last month")
+                Spacer()
+                Text("end")
+            }
+            .font(Typography.errorCaption)
+            .opacity(0.75)
+        }
+        .accessibilityHidden(true)
+    }
+
+    /// Builds one series' path.
+    /// - Parameters:
+    ///   - values: The running totals, day one first.
+    ///   - dayCount: How many days the horizontal axis spans.
+    ///   - peak: The value at the top of the chart.
+    ///   - size: The drawing area.
+    /// - Returns: The path.
+    private func line(_ values: [Int], dayCount: Int, peak: Int, size: CGSize) -> Path {
+        var path = Path()
+        for (index, value) in values.enumerated() {
+            let position = point(
+                index: index, value: value, dayCount: dayCount, peak: peak, size: size
+            )
+            if index == 0 { path.move(to: position) } else { path.addLine(to: position) }
+        }
+        return path
+    }
+
+    /// Places one day's value in the drawing area.
+    /// - Parameters:
+    ///   - index: The zero-based day.
+    ///   - value: The running total that day.
+    ///   - dayCount: How many days the horizontal axis spans.
+    ///   - peak: The value at the top of the chart.
+    ///   - size: The drawing area.
+    /// - Returns: The point.
+    private func point(
+        index: Int, value: Int, dayCount: Int, peak: Int, size: CGSize
+    ) -> CGPoint {
+        let inset: CGFloat = 4
+        let x = inset + (size.width - 2 * inset) * CGFloat(index) / CGFloat(dayCount - 1)
+        let y = size.height - inset - (size.height - 2 * inset) * CGFloat(value) / CGFloat(peak)
+        return CGPoint(x: x, y: y)
     }
 }
